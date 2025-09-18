@@ -1,7 +1,4 @@
--- Task 1: Practice Subqueries
--- ALX Airbnb Database Module
 
--- 1. Find all properties where the average rating is greater than 4.0 using a subquery
 SELECT 
     p.property_id,
     p.name,
