@@ -1,6 +1,46 @@
 -- Task 3: Implement Indexes for Optimization
 -- ALX Airbnb Database Module
 
+-- ==============================================
+-- PERFORMANCE ANALYSIS: BEFORE ADDING INDEXES
+-- ==============================================
+
+-- Measure query performance BEFORE adding indexes
+-- These EXPLAIN ANALYZE statements will show baseline performance
+
+-- 1. User login query performance (before index)
+EXPLAIN ANALYZE SELECT * FROM User WHERE email = 'user@example.com';
+
+-- 2. Property search by location performance (before index)
+EXPLAIN ANALYZE SELECT * FROM Property WHERE location = 'New York';
+
+-- 3. Property search by price range performance (before index)
+EXPLAIN ANALYZE SELECT * FROM Property WHERE pricepernight BETWEEN 100 AND 300;
+
+-- 4. Booking date range query performance (before index)
+EXPLAIN ANALYZE SELECT * FROM Booking 
+WHERE start_date >= '2024-01-01' AND end_date <= '2024-12-31';
+
+-- 5. Reviews by property performance (before index)
+EXPLAIN ANALYZE SELECT * FROM Review WHERE property_id = 123;
+
+-- 6. Booking by user performance (before index)
+EXPLAIN ANALYZE SELECT * FROM Booking WHERE user_id = 456;
+
+-- 7. Payment by booking performance (before index)
+EXPLAIN ANALYZE SELECT * FROM Payment WHERE booking_id = 789;
+
+-- 8. Complex join query performance (before index)
+EXPLAIN ANALYZE SELECT p.name, b.start_date, b.end_date, u.first_name, u.last_name
+FROM Property p
+JOIN Booking b ON p.property_id = b.property_id
+JOIN User u ON b.user_id = u.user_id
+WHERE p.location = 'California' AND b.start_date >= '2024-06-01';
+
+-- ==============================================
+-- INDEX CREATION
+-- ==============================================
+
 -- Performance Analysis: Identify high-usage columns before indexing
 -- Common query patterns that would benefit from indexing:
 -- 1. User lookups by email (login functionality)
@@ -106,9 +146,75 @@ CREATE INDEX idx_user_email_lower ON User(LOWER(email));
 -- Index for JSON columns (if using JSON data types)
 -- CREATE INDEX idx_property_amenities ON Property USING gin(amenities);
 
+-- ==============================================
+-- PERFORMANCE ANALYSIS: AFTER ADDING INDEXES
+-- ==============================================
+
+-- Measure query performance AFTER adding indexes
+-- These EXPLAIN ANALYZE statements will show improved performance
+
+-- 1. User login query performance (after index)
+EXPLAIN ANALYZE SELECT * FROM User WHERE email = 'user@example.com';
+
+-- 2. Property search by location performance (after index)
+EXPLAIN ANALYZE SELECT * FROM Property WHERE location = 'New York';
+
+-- 3. Property search by price range performance (after index)
+EXPLAIN ANALYZE SELECT * FROM Property WHERE pricepernight BETWEEN 100 AND 300;
+
+-- 4. Booking date range query performance (after index)
+EXPLAIN ANALYZE SELECT * FROM Booking 
+WHERE start_date >= '2024-01-01' AND end_date <= '2024-12-31';
+
+-- 5. Reviews by property performance (after index)
+EXPLAIN ANALYZE SELECT * FROM Review WHERE property_id = 123;
+
+-- 6. Booking by user performance (after index)
+EXPLAIN ANALYZE SELECT * FROM Booking WHERE user_id = 456;
+
+-- 7. Payment by booking performance (after index)
+EXPLAIN ANALYZE SELECT * FROM Payment WHERE booking_id = 789;
+
+-- 8. Complex join query performance (after index)
+EXPLAIN ANALYZE SELECT p.name, b.start_date, b.end_date, u.first_name, u.last_name
+FROM Property p
+JOIN Booking b ON p.property_id = b.property_id
+JOIN User u ON b.user_id = u.user_id
+WHERE p.location = 'California' AND b.start_date >= '2024-06-01';
+
+-- ==============================================
+-- ADDITIONAL PERFORMANCE TESTING QUERIES
+-- ==============================================
+
+-- Test composite index performance
+EXPLAIN ANALYZE SELECT * FROM Property 
+WHERE location = 'Miami' AND pricepernight BETWEEN 150 AND 250;
+
+-- Test partial index performance for active bookings
+EXPLAIN ANALYZE SELECT * FROM Booking 
+WHERE status = 'confirmed' AND start_date >= CURRENT_DATE;
+
+-- Test text search index performance
+EXPLAIN ANALYZE SELECT * FROM Property 
+WHERE to_tsvector('english', name) @@ to_tsquery('english', 'luxury');
+
+-- Test case-insensitive email search
+EXPLAIN ANALYZE SELECT * FROM User WHERE LOWER(email) = LOWER('User@Example.com');
+
+-- Test booking user status date composite index
+EXPLAIN ANALYZE SELECT * FROM Booking 
+WHERE user_id = 100 AND status = 'confirmed' AND start_date >= '2024-01-01';
+
+-- Test high-value booking partial index
+EXPLAIN ANALYZE SELECT * FROM Booking 
+WHERE total_price > 100 AND start_date >= CURRENT_DATE - INTERVAL '1 year';
+
+-- ==============================================
+-- INDEX MAINTENANCE AND MONITORING
+-- ==============================================
+
 -- Show index usage analysis query
 -- Use this query to monitor index usage after implementation
-/*
 SELECT 
     schemaname,
     tablename,
@@ -116,18 +222,69 @@ SELECT
     idx_tup_read,
     idx_tup_fetch,
     idx_blks_read,
-    idx_blks_hit
+    idx_blks_hit,
+    ROUND((idx_blks_hit::float / NULLIF(idx_blks_hit + idx_blks_read, 0)) * 100, 2) as hit_ratio
 FROM pg_stat_user_indexes
 ORDER BY idx_tup_read DESC;
-*/
 
 -- Query to check index sizes
-/*
 SELECT 
     schemaname,
     tablename,
     indexname,
-    pg_size_pretty(pg_relation_size(indexrelid)) as index_size
+    pg_size_pretty(pg_relation_size(indexrelid)) as index_size,
+    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as table_size
 FROM pg_stat_user_indexes
 ORDER BY pg_relation_size(indexrelid) DESC;
-*/
+
+-- Query to find unused indexes
+SELECT 
+    schemaname,
+    tablename,
+    indexname,
+    idx_tup_read,
+    idx_tup_fetch
+FROM pg_stat_user_indexes
+WHERE idx_tup_read = 0 AND idx_tup_fetch = 0
+ORDER BY schemaname, tablename, indexname;
+
+-- Query to check table scan vs index scan ratios
+SELECT 
+    schemaname,
+    tablename,
+    seq_scan,
+    seq_tup_read,
+    idx_scan,
+    idx_tup_fetch,
+    CASE 
+        WHEN seq_scan + idx_scan > 0 
+        THEN ROUND((idx_scan::float / (seq_scan + idx_scan)) * 100, 2) 
+        ELSE 0 
+    END as index_usage_ratio
+FROM pg_stat_user_tables
+ORDER BY index_usage_ratio ASC;
+
+-- ==============================================
+-- PERFORMANCE COMPARISON SUMMARY
+-- ==============================================
+
+-- To compare performance before and after indexes:
+-- 1. Run the EXPLAIN ANALYZE queries in the "BEFORE" section
+-- 2. Note the execution times and costs
+-- 3. Create the indexes
+-- 4. Run the EXPLAIN ANALYZE queries in the "AFTER" section
+-- 5. Compare execution times, costs, and query plans
+
+-- Expected improvements:
+-- - Reduced execution time for indexed queries
+-- - Lower cost values in query plans
+-- - Index scans instead of sequential scans
+-- - Faster JOIN operations due to foreign key indexes
+-- - Better performance for WHERE clauses on indexed columns
+
+-- Monitor these metrics:
+-- - Total runtime (decreased)
+-- - Planning time (may increase slightly)
+-- - Actual time per loop (decreased)
+-- - Rows processed (should be more selective)
+-- - Buffers hit/read ratios (improved cache usage)
